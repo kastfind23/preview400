@@ -373,6 +373,26 @@ display:flex;align-items:center;gap:7px}
 background-image:radial-gradient(currentColor 1px,transparent 1px);background-size:4px 4px;opacity:.7}
 .detail-hd{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 
+/* galerie de visuels d'un projet */
+.gal{display:flex;flex-direction:column;gap:10px}
+.galgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
+.galitem{position:relative;aspect-ratio:4/5;border-radius:var(--r-img);overflow:hidden;background:#E7E4DE;
+border:1px solid rgba(18,18,18,.12)}
+.galitem img{width:100%;height:100%;object-fit:cover}
+.galitem .rank{position:absolute;top:6px;left:6px;padding:3px 7px;border-radius:8px;
+background:rgba(8,8,10,.74);color:var(--paper);font-size:10px;letter-spacing:.08em;
+backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.galitem .pmove{top:auto;bottom:6px;right:6px}
+.galitem .pmove button{width:22px;height:22px;font-size:12px}
+.gal-x{position:absolute;top:6px;right:6px;width:22px;height:22px;padding:0;border:0;border-radius:7px;
+background:rgba(8,8,10,.74);color:var(--paper);font-size:11px;line-height:1;cursor:pointer;
+display:flex;align-items:center;justify-content:center;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.gal-x:hover{background:#B3392A}
+
+/* un seul visuel : ni flèches ni défilement dans la fiche projet */
+.railwrap[data-solo="1"] .arw{display:none}
+.railwrap[data-solo="1"] .sheet-rail>div{width:calc(100% - 40px)}
+
 /* import d'image */
 .drop{display:flex;gap:14px;align-items:stretch}
 .drop .thumb{flex:none;width:92px;aspect-ratio:4/5;border-radius:var(--r-img);overflow:hidden;background:#E7E4DE}
@@ -1038,15 +1058,15 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
 
   /* ---------------- données ---------------- */
   var DEFAULT_PROJECTS = [
-    { id: 'p1', img: IMG.p1, title: 'Chore jacket toile lourde', handle: '@aether.archive', ig: 'https://instagram.com/',
+    { id: 'p1', images: [{ src: IMG.p1 }], title: 'Chore jacket toile lourde', handle: '@aether.archive', ig: 'https://instagram.com/',
       discipline: 'Développement et série',
       blurb: "Développement complet puis série. Patron repris trois fois pour la poche poitrine, coutures rabattues sur tout le vêtement, toile lavée avant coupe.",
       keys: 'Tissu : Toile de coton 380 g/m²\nPrestation : Développement et série\nSérie : 420 pièces\nCroquis à livraison : 16 semaines' },
-    { id: 'p2', img: IMG.p2, title: 'Programme Supima Essentials', handle: '@form.essentials', ig: 'https://instagram.com/',
+    { id: 'p2', images: [{ src: IMG.p2 }], title: 'Programme Supima Essentials', handle: '@form.essentials', ig: 'https://instagram.com/',
       discipline: 'Teinture sur mesure et échantillonnage',
       blurb: 'Teinture sur mesure et échantillonnage. Six bains avant validation de la nuance, puis réassorts en micro-lots.',
       keys: 'Tissu : Jersey Supima 240 g/m²\nPrestation : Teinture sur mesure et échantillons\nSérie : 5 coloris, 1 600 pièces\nRéassort : 4 semaines' },
-    { id: 'p3', img: IMG.p3, title: 'Pantalon portefeuille asymétrique', handle: '@object.lab', ig: 'https://instagram.com/',
+    { id: 'p3', images: [{ src: IMG.p3 }], title: 'Pantalon portefeuille asymétrique', handle: '@object.lab', ig: 'https://instagram.com/',
       discipline: 'Patronage et coupe-confection',
       blurb: 'Patronage et coupe-confection. Patron refait depuis le bassin, deux essayages sur modèle vivant, puis petite série.',
       keys: 'Tissu : Twill Tencel\nPrestation : Patronage et coupe-confection\nSérie : 180 pièces\nEssayages : 2 tours' }
@@ -1176,11 +1196,21 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
     services: ['Patronage'], extra: {}, freeBrief: ''
   };
 
+  /* Ancien format : un seul visuel sous `img`. On le convertit en liste pour
+     que le reste du code n'ait qu'une seule forme à connaître. */
+  function normaliserProjets(list) {
+    (list || []).forEach(function (p) {
+      if (!Array.isArray(p.images)) p.images = p.img ? [{ src: p.img }] : [];
+      p.img = p.images.length ? p.images[0].src : null;
+    });
+    return list;
+  }
+
   function load() {
     if (ONLINE) {
-      state.projects = (BOOT.projects && BOOT.projects.length)
+      state.projects = normaliserProjets((BOOT.projects && BOOT.projects.length)
         ? BOOT.projects
-        : DEFAULT_PROJECTS.map(function (p) { return Object.assign({}, p); });
+        : DEFAULT_PROJECTS.map(function (p) { return JSON.parse(JSON.stringify(p)); }));
       if (BOOT.hero) state.hero = BOOT.hero;
       /* demandes et textes ne sont chargés qu'à l'ouverture de l'admin :
          inutile de les envoyer à chaque visiteur */
@@ -1190,7 +1220,9 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
     }
     var s = {};
     try { s = JSON.parse(localStorage.getItem(STORE) || '{}'); } catch (e) {}
-    state.projects = (s.projects && s.projects.length) ? s.projects : DEFAULT_PROJECTS.map(function (p) { return Object.assign({}, p); });
+    state.projects = normaliserProjets((s.projects && s.projects.length)
+      ? s.projects
+      : DEFAULT_PROJECTS.map(function (p) { return JSON.parse(JSON.stringify(p)); }));
     state.requests = s.requests || [];
     state.copy = s.copy || {};
     if (s.hero) state.hero = s.hero;
@@ -1412,9 +1444,12 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
     $('#pIg').href = p.ig || '#';
     $('#pBlurb').textContent = t(p.blurb);
     var rail = $('#sheetRail'); rail.innerHTML = '';
-    [p.img, p.img, p.img].forEach(function (src) {
-      rail.appendChild(el('div', {}, [el('img', { src: src || IMG.p1, alt: '' })]));
+    var vues = (p.images && p.images.length) ? p.images : [{ src: p.img || IMG.p1 }];
+    vues.forEach(function (im) {
+      rail.appendChild(el('div', {}, [el('img', { src: im.src, alt: '' })]));
     });
+    /* un seul visuel : les flèches et le défilement n'ont pas lieu d'être */
+    $('.railwrap').dataset.solo = vues.length < 2 ? '1' : '0';
     var keys = $('#pKeys'); keys.innerHTML = '';
     (p.keys || '').split('\n').forEach(function (line) {
       var ix = line.indexOf(':');
@@ -1640,13 +1675,16 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
 
   function kb(n) { return n > 900000 ? (n / 1048576).toFixed(1) + ' Mo' : Math.round(n / 1024) + ' Ko'; }
 
-  /* Bloc « visuel » réutilisé par les projets et par le hero. */
-  function dropZone(currentSrc, maxEdge, onImage) {
+  /* Bloc « visuel » réutilisé par le hero et par la galerie des projets.
+     Sans `currentSrc`, la vignette disparaît : le bloc sert alors à ajouter
+     un visuel à une liste plutôt qu'à en remplacer un. */
+  function dropZone(currentSrc, maxEdge, onImage, label) {
     var thumb = el('div', { class: 'thumb' }, [el('img', { src: currentSrc || '', alt: '' })]);
+    if (!currentSrc) thumb.hidden = true;
     var input = el('input', { type: 'file', accept: 'image/*' });
     var info = el('span', { class: 'note' });
     var zone = el('button', { class: 'zone', type: 'button' }, [
-      el('b', { text: 'Importer un visuel' }),
+      el('b', { text: label || 'Importer un visuel' }),
       el('span', { text: 'JPEG, PNG, WebP, AVIF, GIF — ou glissez le fichier ici' }),
       info
     ]);
@@ -1769,6 +1807,65 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
     });
   }
 
+  /* Galerie d'un projet : autant de visuels que voulu, ordonnables.
+     Le premier de la liste est la couverture affichée sur la page d'accueil ;
+     l'ensemble alimente le carrousel de la fiche projet. */
+  function galerie(p) {
+    var box = el('div', { class: 'gal' });
+
+    function appliquer() {
+      p.img = p.images.length ? p.images[0].src : null;
+      persist(); renderRail(); dessiner();
+    }
+
+    function dessiner() {
+      box.innerHTML = '';
+      var n = p.images.length;
+      box.appendChild(el('span', { class: 'note', text:
+        n === 0 ? 'Aucun visuel pour ce projet.'
+          : n === 1 ? '1 visuel — il sert de couverture.'
+            : n + ' visuels — le premier sert de couverture, les autres défilent dans la fiche.'
+      }));
+
+      if (n) {
+        var grid = el('div', { class: 'galgrid' });
+        p.images.forEach(function (im, i) {
+          var moves = el('div', { class: 'pmove' });
+          var up = el('button', { type: 'button', text: '←', title: 'Reculer' });
+          var dn = el('button', { type: 'button', text: '→', title: 'Avancer' });
+          up.disabled = i === 0;
+          dn.disabled = i === n - 1;
+          up.addEventListener('click', function () {
+            p.images.splice(i - 1, 0, p.images.splice(i, 1)[0]); appliquer();
+          });
+          dn.addEventListener('click', function () {
+            p.images.splice(i + 1, 0, p.images.splice(i, 1)[0]); appliquer();
+          });
+          moves.appendChild(up); moves.appendChild(dn);
+
+          grid.appendChild(el('div', { class: 'galitem' }, [
+            el('img', { src: im.src, alt: '' }),
+            el('span', { class: 'rank', text: i === 0 ? 'Couverture' : String(i + 1) }),
+            moves,
+            el('button', {
+              class: 'gal-x', type: 'button', text: '✕', title: 'Retirer ce visuel',
+              onclick: function () { p.images.splice(i, 1); appliquer(); }
+            })
+          ]));
+        });
+        box.appendChild(grid);
+      }
+
+      box.appendChild(dropZone(null, 1200, function (src, key) {
+        p.images.push(key ? { src: src, key: key } : { src: src });
+        appliquer();
+      }, n ? 'Ajouter un visuel' : 'Importer le premier visuel'));
+    }
+
+    dessiner();
+    return box;
+  }
+
   /* ---- réalisations : grille de cartes + fiche de détail ---- */
   var projView = 'grid', projIndex = 0, dragFrom = null;
   var railSyncRef = null;
@@ -1872,7 +1969,7 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
         back,
         el('b', { text: String(projIndex + 1).padStart(2, '0') + ' · ' + (p.title || 'Sans titre') })
       ]),
-      dropZone(p.img, 1200, function (data) { p.img = data; persist(); renderRail(); }),
+      galerie(p),
       el('div', { class: 'fa2' }, [
         fld('Nom du projet', 'title'),
         fld('Compte Instagram', 'handle'),
@@ -2256,11 +2353,20 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
 
       msg.classList.remove('err');
       msg.textContent = 'Enregistrement…';
+      /* on n'envoie que les visuels qui ont une clé de stockage : un visuel
+         encore sous forme de données locales n'a rien à faire en base */
+      var projets = state.projects.map(function (p) {
+        var c = Object.assign({}, p);
+        c.images = (p.images || []).filter(function (im) { return im.key; })
+                                   .map(function (im) { return { key: im.key }; });
+        delete c.img;
+        return c;
+      });
       var rows = Object.keys(state.copy).map(function (k) {
         return { key: k, fr: state.copy[k].fr || null, en: state.copy[k].en || null };
       });
       Promise.all([
-        api('/api/admin/projects', { projects: state.projects }),
+        api('/api/admin/projects', { projects: projets }),
         api('/api/admin/content', { rows: rows }),
         api('/api/admin/hero', { mode: state.hero.mode, mediaKey: state.hero.mediaKey || '' })
       ]).then(function () {
