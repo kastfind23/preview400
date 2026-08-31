@@ -423,9 +423,17 @@ font-size:13.5px;font-weight:500;cursor:pointer}
 .hint-a.err{color:#B3392A}
 
 .lock{max-width:340px;display:flex;flex-direction:column;gap:14px}
-.lock input{width:100%;padding:11px 12px;background:#fff;border:1px solid rgba(18,18,18,.18);border-radius:9px;
-font-size:18px;letter-spacing:.3em;color:var(--ink);outline:none}
+.pwwrap{position:relative;display:flex;align-items:center}
+.lock input{width:100%;padding:11px 44px 11px 12px;background:#fff;border:1px solid rgba(18,18,18,.18);
+border-radius:9px;font-size:17px;letter-spacing:.08em;color:var(--ink);outline:none}
 .lock input:focus{border-color:var(--ink)}
+/* œil : affiche ou masque le mot de passe saisi */
+.eye{position:absolute;right:4px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;
+border:0;border-radius:8px;background:transparent;color:rgba(18,18,18,.45);cursor:pointer;padding:0}
+.eye:hover{color:var(--ink);background:rgba(18,18,18,.05)}
+.eye svg{width:19px;height:19px;display:block}
+/* barré tant que le mot de passe est masqué */
+.eye[aria-pressed="true"] .slash{display:none}
 .lockrow{display:flex;align-items:center;gap:14px}
 
 /* radios hero */
@@ -596,6 +604,9 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
             <label class="field"><span>E-mail</span><input id="fEmail" type="email" inputmode="email" placeholder="vous@marque.com"></label>
           </div>
           <label class="field"><span>Téléphone ou WhatsApp</span><input id="fPhone" type="tel" inputmode="tel" placeholder="+33 6 00 00 00 00"></label>
+          <div aria-hidden="true" style="position:absolute;left:-9999px" data-nofx>
+            <label>Site web<input id="fWebsite" type="text" tabindex="-1" autocomplete="off"></label>
+          </div>
           <button class="more" id="moreBtn" type="button" data-nofx>Ajouter des précisions</button>
           <div id="moreBox" class="stackcol" hidden>
             <label class="field"><span>Marque</span><input id="fBrand" type="text" placeholder="Nom ou compte Instagram"></label>
@@ -725,10 +736,19 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
 
     <div class="lock" id="lock">
       <span class="note">Code d'accès</span>
-      <input id="code" type="password" inputmode="numeric" placeholder="••••">
+      <div class="pwwrap">
+        <input id="code" type="password" autocomplete="current-password" placeholder="••••••••">
+        <button class="eye" id="toggleCode" type="button" aria-pressed="false" aria-label="Afficher le mot de passe">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M1.8 12S5.5 5.5 12 5.5 22.2 12 22.2 12 18.5 18.5 12 18.5 1.8 12 1.8 12Z"></path>
+            <circle cx="12" cy="12" r="3.2"></circle>
+            <path class="slash" d="M3.5 3.5 20.5 20.5"></path>
+          </svg>
+        </button>
+      </div>
       <div class="lockrow">
         <button class="btn-k" id="unlock">Entrer</button>
-        <span class="hint-a" id="codeMsg">Démo : 0000</span>
+        <span class="hint-a" id="codeMsg"></span>
       </div>
     </div>
 
@@ -912,6 +932,7 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
     "Ajoutez un e-mail pour qu'on puisse répondre.": 'Add an email we can reply to.',
     /* tiroirs de choix du formulaire */
     'Autre': 'Other',
+    'Envoi en cours…': 'Sending…',
     'Sourcing tissu': 'Fabric sourcing',
     'Prototypage': 'Prototyping',
     'Confection': 'Making',
@@ -975,7 +996,6 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
     '[ Admin ]': '[ Admin ]',
     "Code d'accès": 'Access code',
     'Entrer': 'Enter',
-    'Démo : 0000': 'Demo: 0000',
     'Code incorrect.': 'Wrong code.',
     'Demandes': 'Enquiries',
     'Textes du site': 'Site copy',
@@ -996,6 +1016,25 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
   var lang = 'fr';
   var REDUCE = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   function t(fr) { return lang === 'fr' ? fr : (DICT[fr] || fr); }
+
+  /* En production, le serveur peut avoir déjà rendu la page en anglais (pas de
+     scintillement au chargement, et le moteur de recherche voit l'anglais).
+     Dans ce cas le balisage ne contient plus le français : on reconstruit la
+     source française par le dictionnaire inversé, sinon le retour au français
+     serait impossible. En fichier autonome, l'attribut est absent et rien ne change. */
+  var SERVED = document.documentElement.getAttribute('data-served') || 'fr';
+  var REVERSE = null;
+
+  function frSource(text) {
+    if (SERVED !== 'en') return text;
+    if (!REVERSE) {
+      REVERSE = {};
+      for (var k in DICT) if (!REVERSE[DICT[k]]) REVERSE[DICT[k]] = k;
+    }
+    var key = text.trim();
+    var back = key && REVERSE[key];
+    return back ? text.replace(key, back) : text;
+  }
 
   /* ---------------- données ---------------- */
   var DEFAULT_PROJECTS = [
@@ -1080,13 +1119,13 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
         if (!p || p.closest('[data-proj]') || p.closest('.mock-badge') || p.closest('.skip')) continue;
         var sec = p.closest('section[id], footer, nav');
         var id = sec ? (sec.id || sec.tagName.toLowerCase()) : '';
-        push(n.__fr !== undefined ? n.__fr : n.nodeValue, SECTION_LABEL[id] || 'Divers');
+        push(n.__fr !== undefined ? n.__fr : frSource(n.nodeValue), SECTION_LABEL[id] || 'Divers');
       }
     });
 
     $$('[placeholder]').forEach(function (i) {
       if (i.closest('[data-nofx]')) return;
-      push(i.__frph !== undefined ? i.__frph : i.getAttribute('placeholder'), 'Indications de saisie');
+      push(i.__frph !== undefined ? i.__frph : frSource(i.getAttribute('placeholder')), 'Indications de saisie');
     });
 
     /* Questions et choix des six métiers : ils ne sont à l'écran que pour le
@@ -1106,6 +1145,31 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
 
   /* ---------------- store (démo) ---------------- */
   var STORE = 'ms.demo.v2';
+
+  /* Deux modes, un seul code d'interface.
+     En ligne : le serveur injecte les données et l'admin écrit dans la base.
+     En fichier autonome (la maquette envoyée au client) : localStorage.
+     Le repère est le bloc de données déposé par le Worker. */
+  var BOOT = null;
+  try {
+    var el0 = document.getElementById('ms-data');
+    if (el0) BOOT = JSON.parse(el0.textContent);
+  } catch (e) {}
+  var ONLINE = !!BOOT;
+
+  function api(path, body, method) {
+    return fetch(path, {
+      method: method || (body ? 'POST' : 'GET'),
+      headers: body && !(body instanceof Blob) ? { 'content-type': 'application/json' } : undefined,
+      body: body ? (body instanceof Blob ? body : JSON.stringify(body)) : undefined,
+      credentials: 'same-origin'
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok) throw new Error(j.error || 'Erreur ' + r.status);
+        return j;
+      });
+    });
+  }
   var state = {
     projects: [], requests: [], copy: {},
     hero: { mode: 'dark', img: null },
@@ -1113,6 +1177,17 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
   };
 
   function load() {
+    if (ONLINE) {
+      state.projects = (BOOT.projects && BOOT.projects.length)
+        ? BOOT.projects
+        : DEFAULT_PROJECTS.map(function (p) { return Object.assign({}, p); });
+      if (BOOT.hero) state.hero = BOOT.hero;
+      /* demandes et textes ne sont chargés qu'à l'ouverture de l'admin :
+         inutile de les envoyer à chaque visiteur */
+      state.requests = [];
+      state.copy = {};
+      return;
+    }
     var s = {};
     try { s = JSON.parse(localStorage.getItem(STORE) || '{}'); } catch (e) {}
     state.projects = (s.projects && s.projects.length) ? s.projects : DEFAULT_PROJECTS.map(function (p) { return Object.assign({}, p); });
@@ -1126,6 +1201,9 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
   var lastStoreError = '';
   function persist() {
     lastStoreError = '';
+    /* en ligne, l'écriture réelle passe par « Enregistrer » : ici on ne fait
+       que garder l'état de l'écran */
+    if (ONLINE) return true;
     try {
       localStorage.setItem(STORE, JSON.stringify({
         projects: state.projects, requests: state.requests,
@@ -1214,7 +1292,7 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
     var n, changes = [];
     while ((n = w.nextNode())) {
       if (skip(n)) continue;
-      var fr = n.__fr !== undefined ? n.__fr : n.nodeValue;
+      var fr = n.__fr !== undefined ? n.__fr : frSource(n.nodeValue);
       if (!fr.trim()) continue;
       if (n.__fr === undefined) n.__fr = fr;
       var target = targetFor(fr, to);
@@ -1227,7 +1305,7 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
        traduisibles ET modifiables depuis l'admin, comme le reste */
     $$('[placeholder]').forEach(function (i) {
       if (i.closest('[data-nofx]')) return;
-      var ph = i.__frph !== undefined ? i.__frph : i.getAttribute('placeholder');
+      var ph = i.__frph !== undefined ? i.__frph : frSource(i.getAttribute('placeholder'));
       if (i.__frph === undefined) i.__frph = ph;
       i.setAttribute('placeholder', targetFor(ph, to));
     });
@@ -1248,6 +1326,9 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
     if ($('#sheetOv').dataset.open === '1') closeSheet();
     syncLangButtons();
     try { localStorage.setItem('ms.lang', to); } catch (e) {}
+    /* sans effet sur le fichier autonome, utile en ligne : la prochaine
+       visite arrivera directement dans la bonne langue */
+    try { fetch('/api/lang?l=' + to, { method: 'POST' }).catch(function () {}); } catch (e) {}
     /* on reconstruit d'abord (en FR), pour que puces et tiroirs fassent
        partie de la même vague de recomposition que le reste de la page */
     renderChips(); renderExtra();
@@ -1258,6 +1339,8 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
   /* Détection auto : choix mémorisé > langue du navigateur.
      En production, l'en-tête x-vercel-ip-country s'intercale avant le navigateur. */
   function detectLang() {
+    /* le serveur a déjà tranché et rendu la page : on ne le contredit pas */
+    if (document.documentElement.hasAttribute('data-served')) return SERVED;
     var saved = null;
     try { saved = localStorage.getItem('ms.lang'); } catch (e) {}
     if (saved === 'fr' || saved === 'en') return saved;
@@ -1457,17 +1540,47 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
     if ($('#fNote').value.trim()) lines.push('Note : ' + $('#fNote').value.trim());
     var body = lines.join('\n');
 
+    function afficherConfirmation() {
+      $('#recap').textContent = body;
+      $('#formWrap').hidden = true;
+      $('#okWrap').hidden = false;
+      $('#okWrap').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    if (ONLINE) {
+      var answers = {};
+      if (state.services.length > MAX_DETAILED) {
+        if (state.freeBrief) answers['Projet'] = state.freeBrief;
+      } else {
+        state.services.forEach(function (svc) {
+          (FORMS[svc] || []).forEach(function (f) {
+            var v = state.extra[svc + '|' + f.k];
+            if (v) answers[(state.services.length > 1 ? svc + ' — ' : '') + f.fr] = v;
+          });
+        });
+      }
+      hint.textContent = t('Envoi en cours…');
+      api('/api/contact', {
+        services: state.services.join(', '), answers: answers,
+        name: name, brand: $('#fBrand').value.trim(), email: email,
+        phone: $('#fPhone').value.trim(), note: $('#fNote').value.trim(),
+        lang: lang, website: ($('#fWebsite') || {}).value || ''
+      }).then(function () {
+        hint.textContent = '';
+        afficherConfirmation();
+      }).catch(function (e) {
+        hint.textContent = e.message; hint.classList.add('err');
+      });
+      return;
+    }
+
     state.requests.unshift({
       id: Date.now(), date: new Date().toISOString(),
       head: name + (($('#fBrand').value.trim()) ? ' — ' + $('#fBrand').value.trim() : ''),
       email: email, body: body, lang: lang, status: 'Nouveau'
     });
     persist();
-
-    $('#recap').textContent = body;
-    $('#formWrap').hidden = true;
-    $('#okWrap').hidden = false;
-    $('#okWrap').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    afficherConfirmation();
     renderRequests();
   }
 
@@ -1545,7 +1658,32 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
         info.style.color = '';
         info.textContent = res.w + '×' + res.h + ' — ' + kb(res.before) + ' → ' + kb(res.after);
         thumb.firstChild.src = res.data;
-        onImage(res.data);
+
+        if (!ONLINE) { onImage(res.data, null); return; }
+
+        /* en ligne : le visuel part vers le stockage et la page ne garde
+           que son adresse, pas ses octets */
+        info.textContent += ' · envoi…';
+        fetch(res.data)
+          .then(function (r) { return r.blob(); })
+          .then(function (blob) {
+            return fetch('/api/admin/media', {
+              method: 'POST',
+              headers: { 'content-type': blob.type || 'image/webp' },
+              body: blob,
+              credentials: 'same-origin'
+            }).then(function (r) { return r.json(); });
+          })
+          .then(function (out) {
+            if (out.error) throw new Error(out.error);
+            info.textContent = res.w + '×' + res.h + ' — ' + kb(res.after) + ' · en ligne';
+            thumb.firstChild.src = out.url;
+            onImage(out.url, out.key);
+          })
+          .catch(function (e) {
+            info.textContent = 'Envoi impossible : ' + e.message;
+            info.style.color = '#B3392A';
+          });
       });
     }
 
@@ -1600,7 +1738,12 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
         pills.appendChild(el('button', {
           class: 'st', type: 'button', 'data-s': s,
           'aria-pressed': String(status === s), text: s,
-          onclick: function () { r.status = s; persist(); renderReqFilters(); renderRequests(); }
+          onclick: function () {
+            r.status = s;
+            if (ONLINE) api('/api/admin/inquiry', { id: r.id, status: s }).catch(function () {});
+            else persist();
+            renderReqFilters(); renderRequests();
+          }
         }));
       });
       list.appendChild(el('div', { class: 'card-a' }, [
@@ -1616,7 +1759,9 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
             class: 'mini danger', type: 'button', text: 'Supprimer',
             onclick: function () {
               state.requests = state.requests.filter(function (x) { return x.id !== r.id; });
-              persist(); renderReqFilters(); renderRequests();
+              if (ONLINE) api('/api/admin/inquiry', { id: r.id, supprimer: true }).catch(function () {});
+              else persist();
+              renderReqFilters(); renderRequests();
             }
           })
         ])
@@ -1758,8 +1903,9 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
   function renderHero() {
     var box = $('#heroDrop'); if (!box) return;
     box.innerHTML = '';
-    box.appendChild(dropZone(state.hero.img || $('#heroImg').src, 1600, function (data) {
-      state.hero.img = data; persist(); applyHero();
+    box.appendChild(dropZone(state.hero.img || $('#heroImg').src, 1600, function (src, key) {
+      state.hero.img = src; if (key) state.hero.mediaKey = key;
+      persist(); applyHero();
     }));
   }
 
@@ -2013,15 +2159,68 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
     $('#openAdmin').addEventListener('click', openAdmin);
     $('#closeAdmin').addEventListener('click', closeAdmin);
     $('#unlock').addEventListener('click', function () {
-      if ($('#code').value.trim() === '0000') {
+      var code = $('#code').value.trim();
+      var msg = $('#codeMsg');
+
+      function ouvrir() {
         $('#lock').hidden = true; $('#panel').hidden = false; $('#adminTabs').hidden = false;
         renderReqFilters(); renderRequests(); renderProjects(); renderHero(); renderCopy();
-      } else {
-        $('#codeMsg').textContent = t('Code incorrect.');
-        $('#codeMsg').classList.add('err');
       }
+
+      if (!ONLINE) {
+        if (code === '0000') ouvrir();
+        else { msg.textContent = t('Code incorrect.'); msg.classList.add('err'); }
+        return;
+      }
+
+      msg.classList.remove('err');
+      msg.textContent = 'Vérification…';
+      api('/api/admin/login', { password: code })
+        .then(function () { return api('/api/admin/data'); })
+        .then(function (d) {
+          state.projects = d.projects || [];
+          var NL = String.fromCharCode(10);
+          state.requests = (d.inquiries || []).map(function (r) {
+            var reponses = '';
+            try {
+              var a = JSON.parse(r.answers || '{}');
+              reponses = Object.keys(a).map(function (k) { return k + ' : ' + a[k]; }).join(NL);
+            } catch (e) {}
+            return {
+              id: r.id, date: r.created_at, status: r.status, email: r.email,
+              head: r.name + (r.brand ? ' — ' + r.brand : ''),
+              body: [
+                'Prestations : ' + (r.services || '—'),
+                reponses,
+                'Nom : ' + r.name,
+                r.brand ? 'Marque : ' + r.brand : '',
+                'E-mail : ' + r.email,
+                r.phone ? 'Téléphone : ' + r.phone : '',
+                r.note ? 'Note : ' + r.note : ''
+              ].filter(Boolean).join(NL)
+            };
+          });
+          state.copy = {};
+          (d.content || []).forEach(function (c) {
+            if (c.value_fr || c.value_en) state.copy[c.key] = { fr: c.value_fr, en: c.value_en };
+          });
+          if (d.hero) state.hero = d.hero;
+          msg.textContent = '';
+          ouvrir(); applyHero();
+        })
+        .catch(function (e) { msg.textContent = e.message; msg.classList.add('err'); });
     });
     $('#code').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('#unlock').click(); });
+
+    var eye = $('#toggleCode');
+    eye.addEventListener('click', function () {
+      var code = $('#code');
+      var visible = code.type === 'text';
+      code.type = visible ? 'password' : 'text';
+      eye.setAttribute('aria-pressed', String(!visible));
+      eye.setAttribute('aria-label', visible ? 'Afficher le mot de passe' : 'Masquer le mot de passe');
+      code.focus();
+    });
     $$('.tab').forEach(function (tab) {
       tab.addEventListener('click', function () {
         $$('.tab').forEach(function (x) { x.setAttribute('aria-selected', String(x === tab)); });
@@ -2044,12 +2243,33 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
       persist(); renderProjects(); renderRail();
     });
     $('#saveAdmin').addEventListener('click', function () {
-      var ok = persist();
-      renderRail(); applyCopy(); applyHero();
       var msg = $('#saveMsg');
-      msg.classList.toggle('err', !ok);
-      msg.textContent = ok ? 'Enregistré.' : lastStoreError;
-      if (ok) setTimeout(function () { msg.textContent = ''; }, 2200);
+
+      if (!ONLINE) {
+        var ok = persist();
+        renderRail(); applyCopy(); applyHero();
+        msg.classList.toggle('err', !ok);
+        msg.textContent = ok ? 'Enregistré.' : lastStoreError;
+        if (ok) setTimeout(function () { msg.textContent = ''; }, 2200);
+        return;
+      }
+
+      msg.classList.remove('err');
+      msg.textContent = 'Enregistrement…';
+      var rows = Object.keys(state.copy).map(function (k) {
+        return { key: k, fr: state.copy[k].fr || null, en: state.copy[k].en || null };
+      });
+      Promise.all([
+        api('/api/admin/projects', { projects: state.projects }),
+        api('/api/admin/content', { rows: rows }),
+        api('/api/admin/hero', { mode: state.hero.mode, mediaKey: state.hero.mediaKey || '' })
+      ]).then(function () {
+        renderRail(); applyCopy(); applyHero();
+        msg.textContent = 'Enregistré. La page publique est à jour.';
+        setTimeout(function () { msg.textContent = ''; }, 3000);
+      }).catch(function (e) {
+        msg.textContent = e.message; msg.classList.add('err');
+      });
     });
 
     /* clavier : échap ferme, Tab reste prisonnier du panneau ouvert */
