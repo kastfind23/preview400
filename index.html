@@ -442,6 +442,23 @@ font-size:13.5px;font-weight:500;cursor:pointer}
 .hint-a{font-size:12.5px;color:rgba(18,18,18,.55);max-width:46ch}
 .hint-a.err{color:#B3392A}
 
+/* Témoin de modifications non enregistrées, dans la barre du bas */
+.dirty{display:none;align-items:center;gap:7px;font-size:12.5px;color:#9A6410}
+.dirty::before{content:"";width:7px;height:7px;border-radius:50%;background:#9A6410;flex:none}
+body[data-dirty="1"] .dirty{display:flex}
+
+/* Demande de confirmation avant de perdre des modifications */
+.confirm{position:fixed;inset:0;z-index:500;display:none;align-items:center;justify-content:center;
+padding:18px;background:rgba(6,6,8,.74);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.confirm[data-open="1"]{display:flex}
+.confirm-box{width:min(430px,100%);background:var(--surface);color:var(--ink);
+border:1px solid rgba(18,18,18,.14);border-radius:var(--r-card);padding:24px;
+display:flex;flex-direction:column;gap:14px;box-shadow:0 24px 70px rgba(8,8,10,.45);
+animation:fade .25s ease}
+.confirm-box h3{font-size:19px}
+.confirm-box p{font-size:14px;color:rgba(18,18,18,.66)}
+.confirm-row{display:flex;flex-wrap:wrap;gap:9px;margin-top:4px}
+
 .lock{max-width:340px;display:flex;flex-direction:column;gap:14px}
 .pwwrap{position:relative;display:flex;align-items:center}
 .lock input{width:100%;padding:11px 44px 11px 12px;background:#fff;border:1px solid rgba(18,18,18,.18);
@@ -714,6 +731,19 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
 
 <div class="mock-badge" id="badge">Maquette — non contractuelle</div>
 
+<!-- ============ CONFIRMATION AVANT DE PERDRE DES MODIFICATIONS ============ -->
+<div class="confirm" id="confirmOv" data-open="0" data-nofx>
+  <div class="confirm-box" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <h3 id="confirmTitle">Modifications non enregistrées</h3>
+    <p>Vos changements ne sont pas encore en ligne. Que voulez-vous faire ?</p>
+    <div class="confirm-row">
+      <button class="btn-k" id="confirmSave">Enregistrer et fermer</button>
+      <button class="mini" id="confirmStay">Continuer à modifier</button>
+      <button class="mini danger" id="confirmDrop">Fermer sans enregistrer</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ FICHE PROJET ============ -->
 <div class="ov" id="sheetOv" data-open="0">
   <div class="scrim" data-close></div>
@@ -822,6 +852,7 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
 
       <div class="admin-ft">
         <button class="btn-k" id="saveAdmin">Enregistrer</button>
+        <span class="dirty">Modifications non enregistrées</span>
         <span class="hint-a" id="saveMsg"></span>
       </div>
     </div>
@@ -1646,6 +1677,79 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
 
   /* ---------------- admin ---------------- */
   var lastFocus = null;
+
+  /* Les modifications vivent en mémoire jusqu'au bouton Enregistrer. Sans
+     témoin ni garde-fou, fermer le panneau les perdrait sans un mot. */
+  var dirty = false;
+  function markDirty() { dirty = true; document.body.dataset.dirty = '1'; }
+  function markClean() { dirty = false; document.body.dataset.dirty = '0'; }
+
+  /* Demande quoi faire avant une action qui ferait perdre le travail en cours.
+     Trois issues : enregistrer puis partir, rester, partir sans enregistrer. */
+  function guard(onLeave) {
+    if (!dirty) { onLeave(); return; }
+    var ov = $('#confirmOv');
+    ov.dataset.open = '1';
+    $('#confirmSave').focus();
+
+    function close() {
+      ov.dataset.open = '0';
+      $('#confirmSave').onclick = null;
+      $('#confirmStay').onclick = null;
+      $('#confirmDrop').onclick = null;
+    }
+    $('#confirmStay').onclick = function () { close(); };
+    $('#confirmDrop').onclick = function () { close(); markClean(); onLeave(); };
+    $('#confirmSave').onclick = function () {
+      close();
+      saveAdmin(function (ok) { if (ok) onLeave(); });
+    };
+  }
+
+  /* Enregistre l'ensemble des modifications. `apres` reçoit true si tout est
+     passé, ce qui permet à la confirmation d'enchaîner sur la fermeture. */
+  function saveAdmin(apres) {
+    var msg = $('#saveMsg');
+
+    if (!ONLINE) {
+      var ok = persist();
+      renderRail(); applyCopy(); applyHero();
+      msg.classList.toggle('err', !ok);
+      msg.textContent = ok ? 'Enregistré.' : lastStoreError;
+      if (ok) { markClean(); setTimeout(function () { msg.textContent = ''; }, 2200); }
+      if (apres) apres(ok);
+      return;
+    }
+
+    msg.classList.remove('err');
+    msg.textContent = 'Enregistrement en cours…';
+    /* on n'envoie que les visuels qui ont une clé de stockage : un visuel
+       encore sous forme de données locales n'a rien à faire en base */
+    var projets = state.projects.map(function (p) {
+      var c = Object.assign({}, p);
+      c.images = (p.images || []).filter(function (im) { return im.key; })
+                                 .map(function (im) { return { key: im.key }; });
+      delete c.img;
+      return c;
+    });
+    var rows = Object.keys(state.copy).map(function (k) {
+      return { key: k, fr: state.copy[k].fr || null, en: state.copy[k].en || null };
+    });
+    Promise.all([
+      api('/api/admin/projects', { projects: projets }),
+      api('/api/admin/content', { rows: rows }),
+      api('/api/admin/hero', { mode: state.hero.mode, mediaKey: state.hero.mediaKey || '' })
+    ]).then(function () {
+      renderRail(); applyCopy(); applyHero(); markClean();
+      msg.textContent = 'Enregistré. La page publique est à jour.';
+      setTimeout(function () { msg.textContent = ''; }, 3000);
+      if (apres) apres(true);
+    }).catch(function (e) {
+      msg.textContent = e.message; msg.classList.add('err');
+      if (apres) apres(false);
+    });
+  }
+
   function openAdmin() {
     lastFocus = document.activeElement;
     $('#adminOv').dataset.open = '1';
@@ -1655,9 +1759,11 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
     if (lock && !lock.hidden) $('#code').focus(); else focusFirst($('#adminOv'));
   }
   function closeAdmin() {
-    $('#adminOv').dataset.open = '0';
-    document.body.style.overflow = '';
-    if (lastFocus && lastFocus.focus) lastFocus.focus();
+    guard(function () {
+      $('#adminOv').dataset.open = '0';
+      document.body.style.overflow = '';
+      if (lastFocus && lastFocus.focus) lastFocus.focus();
+    });
   }
 
   /* ---- import d'image : accepte tout format décodable par le navigateur,
@@ -1840,7 +1946,7 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
 
     function appliquer() {
       p.img = p.images.length ? p.images[0].src : null;
-      persist(); renderRail(); dessiner();
+      markDirty(); persist(); renderRail(); dessiner();
     }
 
     function dessiner() {
@@ -1901,7 +2007,7 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
     if (to < 0 || to >= state.projects.length || from === to) return;
     var p = state.projects.splice(from, 1)[0];
     state.projects.splice(to, 0, p);
-    persist(); renderProjects(); renderRail();
+    markDirty(); persist(); renderProjects(); renderRail();
   }
 
   function renderProjects() {
@@ -1980,7 +2086,7 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
     function fld(label, key, rows) {
       var input = rows ? el('textarea', { rows: rows }) : el('input', { type: 'text' });
       input.value = p[key] || '';
-      input.addEventListener('input', function () { p[key] = input.value; });
+      input.addEventListener('input', function () { markDirty(); p[key] = input.value; });
       return el('label', { class: 'fa' }, [el('span', { text: label }), input]);
     }
 
@@ -2007,7 +2113,7 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
           class: 'mini danger', type: 'button', text: 'Retirer ce projet',
           onclick: function () {
             state.projects.splice(projIndex, 1);
-            projView = 'grid'; persist(); renderProjects(); renderRail();
+            projView = 'grid'; markDirty(); persist(); renderProjects(); renderRail();
           }
         })
       ])
@@ -2041,6 +2147,7 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
       var ta = el('textarea', { rows: 2, placeholder: placeholder });
       ta.value = cur[which] || '';
       ta.addEventListener('input', function () {
+        markDirty();
         var o = state.copy[f.k] || (state.copy[f.k] = {});
         if (ta.value.trim()) o[which] = ta.value.trim(); else delete o[which];
         if (!o.fr && !o.en) delete state.copy[f.k];
@@ -2286,6 +2393,7 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
 
       function ouvrir() {
         $('#lock').hidden = true; $('#panel').hidden = false; $('#adminTabs').hidden = false;
+        markClean();
         renderReqFilters(); renderRequests(); renderProjects(); renderHero(); renderCopy();
       }
 
@@ -2354,57 +2462,21 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
 
     $$('#heroModes .mode').forEach(function (b) {
       b.addEventListener('click', function () {
-        state.hero.mode = b.dataset.mode; persist(); applyHero();
+        state.hero.mode = b.dataset.mode; markDirty(); persist(); applyHero();
       });
     });
     $('#addProj').addEventListener('click', function () {
       state.projects.push({ id: 'p' + Date.now(), img: IMG.veste, title: 'Nouveau projet', handle: '@', ig: '#', discipline: '', blurb: '', keys: 'Tissu : \nSérie : ' });
       /* on ouvre directement la fiche du projet créé */
       projIndex = state.projects.length - 1; projView = 'detail';
-      persist(); renderProjects(); renderRail();
+      markDirty(); persist(); renderProjects(); renderRail();
     });
-    $('#saveAdmin').addEventListener('click', function () {
-      var msg = $('#saveMsg');
-
-      if (!ONLINE) {
-        var ok = persist();
-        renderRail(); applyCopy(); applyHero();
-        msg.classList.toggle('err', !ok);
-        msg.textContent = ok ? 'Enregistré.' : lastStoreError;
-        if (ok) setTimeout(function () { msg.textContent = ''; }, 2200);
-        return;
-      }
-
-      msg.classList.remove('err');
-      msg.textContent = 'Enregistrement…';
-      /* on n'envoie que les visuels qui ont une clé de stockage : un visuel
-         encore sous forme de données locales n'a rien à faire en base */
-      var projets = state.projects.map(function (p) {
-        var c = Object.assign({}, p);
-        c.images = (p.images || []).filter(function (im) { return im.key; })
-                                   .map(function (im) { return { key: im.key }; });
-        delete c.img;
-        return c;
-      });
-      var rows = Object.keys(state.copy).map(function (k) {
-        return { key: k, fr: state.copy[k].fr || null, en: state.copy[k].en || null };
-      });
-      Promise.all([
-        api('/api/admin/projects', { projects: projets }),
-        api('/api/admin/content', { rows: rows }),
-        api('/api/admin/hero', { mode: state.hero.mode, mediaKey: state.hero.mediaKey || '' })
-      ]).then(function () {
-        renderRail(); applyCopy(); applyHero();
-        msg.textContent = 'Enregistré. La page publique est à jour.';
-        setTimeout(function () { msg.textContent = ''; }, 3000);
-      }).catch(function (e) {
-        msg.textContent = e.message; msg.classList.add('err');
-      });
-    });
+    $('#saveAdmin').addEventListener('click', function () { saveAdmin(); });
 
     /* clavier : échap ferme, Tab reste prisonnier du panneau ouvert */
     window.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') {
+        if ($('#confirmOv').dataset.open === '1') { $('#confirmStay').click(); return; }
         if ($('#adminOv').dataset.open === '1') closeAdmin();
         else if ($('#sheetOv').dataset.open === '1') closeSheet();
         return;
@@ -2418,6 +2490,15 @@ color:rgba(244,240,231,.7);font-size:10.5px;letter-spacing:.1em;text-transform:u
         es.forEach(function (e) { $('#lang').classList.toggle('away', e.isIntersecting); });
       }, { rootMargin: '0px 0px -20% 0px' }).observe($('footer'));
     }
+
+    /* Dernier filet : quitter l'onglet ou recharger. Le navigateur affiche
+       son propre avertissement, non personnalisable. */
+    window.addEventListener('beforeunload', function (e) {
+      if (!dirty) return;
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    });
 
     /* hero : mode et visuel enregistrés depuis l'admin */
     applyHero();
